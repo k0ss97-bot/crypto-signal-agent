@@ -86,6 +86,8 @@ git push -u origin main
 python -m crypto_signal_agent.cli monitor-new --loop --send-alert
 ```
 
+Также есть `main.py`, `requirements.txt` и `Procfile` для платформ, которые запускают Python-проекты без Dockerfile.
+
 Логика:
 
 - бот каждые `MONITOR_INTERVAL_SECONDS` секунд проверяет все Bybit Spot `USDT` пары;

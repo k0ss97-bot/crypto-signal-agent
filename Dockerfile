@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY crypto_signal_agent ./crypto_signal_agent
+COPY main.py Procfile requirements.txt ./
 COPY run_monitor.sh ./run_monitor.sh
 
 RUN pip install --upgrade pip \

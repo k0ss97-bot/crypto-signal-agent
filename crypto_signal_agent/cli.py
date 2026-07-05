@@ -145,7 +145,15 @@ def main() -> None:
             run_cycle()
             return
 
-        print(f"Мониторинг запущен. Интервал: {interval} секунд. Остановить: Ctrl+C.")
+        started_text = (
+            "Crypto Signal Agent запущен\n"
+            "Режим: мониторинг новых Bybit Spot монет\n"
+            f"Интервал: {interval} секунд\n"
+            "Если появится новая USDT-пара, бот отправит сигнал."
+        )
+        print(started_text, flush=True)
+        if args.send_alert:
+            TelegramAlerter.from_settings(settings).send_text(started_text)
         try:
             while True:
                 run_cycle()

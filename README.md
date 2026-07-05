@@ -151,6 +151,8 @@ python -m crypto_signal_agent.cli monitor-new --loop --send-alert
 deploy/GITHUB_BOTHOST_DEPLOY_RU.md
 ```
 
+Также добавлены `main.py`, `requirements.txt` и `Procfile`, если хостинг выберет стандартный Python-запуск вместо Dockerfile.
+
 ## Тесты
 
 ```bash
