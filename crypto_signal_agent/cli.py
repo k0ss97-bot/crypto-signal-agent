@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 
 from crypto_signal_agent.alerts.telegram import TelegramAlerter
@@ -77,8 +78,14 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+DEFAULT_HOSTING_ARGS = ["monitor-new", "--loop", "--send-alert"]
+
+
+def main(argv: list[str] | None = None) -> None:
+    cli_args = list(sys.argv[1:] if argv is None else argv)
+    if not cli_args:
+        cli_args = DEFAULT_HOSTING_ARGS
+    args = build_parser().parse_args(cli_args)
     settings = Settings.from_env()
 
     if args.command == "check-symbol":

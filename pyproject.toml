@@ -9,6 +9,9 @@ dependencies = []
 openai = ["openai>=1.0.0"]
 dev = []
 
+[project.scripts]
+crypto-signal-agent = "crypto_signal_agent.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["crypto_signal_agent*"]
 exclude = ["data*", "outputs*", "tests*", "work*"]
