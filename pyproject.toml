@@ -1,0 +1,17 @@
+[project]
+name = "crypto-signal-agent"
+version = "0.1.0"
+description = "Crypto event monitoring and signal scoring MVP for Binance/Bybit tradeability."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+dev = []
+
+[tool.setuptools.packages.find]
+include = ["crypto_signal_agent*"]
+exclude = ["data*", "outputs*", "tests*", "work*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

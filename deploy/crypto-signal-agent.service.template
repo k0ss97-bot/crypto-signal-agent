@@ -1,0 +1,16 @@
+[Unit]
+Description=Crypto Signal Agent monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=USER
+WorkingDirectory=/home/USER/crypto-signal-agent
+ExecStart=/bin/bash /home/USER/crypto-signal-agent/run_monitor.sh
+Restart=always
+RestartSec=20
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
