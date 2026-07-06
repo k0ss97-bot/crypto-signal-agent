@@ -238,6 +238,8 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(started_text, flush=True)
         if args.send_alert:
+            if alerter.delete_webhook():
+                print("Telegram webhook очищен, включен polling для кнопок.", flush=True)
             alerter.send_text(started_text)
         try:
             while True:

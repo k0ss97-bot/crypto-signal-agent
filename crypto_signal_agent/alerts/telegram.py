@@ -106,6 +106,15 @@ class TelegramAlerter:
             return self._post_with_curl(self._api_url("answerCallbackQuery"), payload)
         return bool(response.get("ok", True)) if isinstance(response, dict) else True
 
+    def delete_webhook(self) -> bool:
+        if not self.settings.telegram_bot_token:
+            return False
+        try:
+            response = self.http.post_json(self._api_url("deleteWebhook"), {"drop_pending_updates": False})
+        except HttpClientError:
+            return self._post_with_curl(self._api_url("deleteWebhook"), {"drop_pending_updates": False})
+        return bool(response.get("ok", True)) if isinstance(response, dict) else True
+
     def is_authorized_chat(self, chat_id: str | int | None) -> bool:
         if chat_id is None or not self.settings.telegram_chat_id:
             return False

@@ -271,6 +271,24 @@ class ScoringAndRiskTests(unittest.TestCase):
         button = http.payload["reply_markup"]["inline_keyboard"][0][0]
         self.assertEqual(button["callback_data"], DIAGNOSTICS_CALLBACK_DATA)
 
+    def test_telegram_delete_webhook_uses_polling_mode(self) -> None:
+        class FakeHttp:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, dict]] = []
+
+            def post_json(self, url: str, payload: dict) -> dict:
+                self.calls.append((url, payload))
+                return {"ok": True}
+
+        settings = make_settings(telegram_bot_token="secret-token", telegram_chat_id="123")
+        http = FakeHttp()
+        ok = TelegramAlerter(settings, http).delete_webhook()
+
+        self.assertTrue(ok)
+        self.assertEqual(len(http.calls), 1)
+        self.assertIn("/deleteWebhook", http.calls[0][0])
+        self.assertEqual(http.calls[0][1], {"drop_pending_updates": False})
+
     def test_diagnostics_message_has_safe_support_data(self) -> None:
         settings = make_settings(
             openai_api_key="secret-openai",
