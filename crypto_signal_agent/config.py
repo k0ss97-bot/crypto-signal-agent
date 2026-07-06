@@ -67,6 +67,7 @@ class Settings:
     no_signal_if_source_unverified: bool
     live_trading_enabled: bool
     monitor_interval_seconds: int
+    monitor_exchanges: tuple[str, ...]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -90,4 +91,5 @@ class Settings:
             no_signal_if_source_unverified=env_bool("NO_SIGNAL_IF_SOURCE_UNVERIFIED", True),
             live_trading_enabled=env_bool("LIVE_TRADING_ENABLED", False),
             monitor_interval_seconds=env_int("MONITOR_INTERVAL_SECONDS", 300),
+            monitor_exchanges=env_list("MONITOR_EXCHANGES", ("bybit",)),
         )

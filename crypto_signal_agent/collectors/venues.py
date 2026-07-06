@@ -53,3 +53,15 @@ class VenueChecker:
             )
             for exchange in self.settings.required_exchanges
         )
+
+    def market_metrics(self, exchange: str, symbol: str) -> dict[str, float | bool]:
+        if exchange == "bybit":
+            return self.bybit.spot_market_metrics(symbol)
+        if exchange == "binance":
+            return self.binance.spot_market_metrics(symbol)
+        return {
+            "price_change_20m_pct": 0.0,
+            "volume_ratio_vs_7d": 1.0,
+            "spread_pct": 0.0,
+            "liquidity_ok": False,
+        }

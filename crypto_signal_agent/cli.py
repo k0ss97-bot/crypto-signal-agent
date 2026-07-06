@@ -9,7 +9,7 @@ from crypto_signal_agent.alerts.telegram import TelegramAlerter
 from crypto_signal_agent.collectors.venues import VenueChecker
 from crypto_signal_agent.config import Settings
 from crypto_signal_agent.models import Event, MarketMetrics, Source
-from crypto_signal_agent.listing_monitor import NewListingMonitor
+from crypto_signal_agent.listing_monitor import NewListingMonitor, parse_monitor_exchanges, telegram_status_text
 from crypto_signal_agent.pipeline import SignalPipeline
 from crypto_signal_agent.presentation import user_signal_dict, user_venue_dict
 from crypto_signal_agent.scanner import (
@@ -18,6 +18,7 @@ from crypto_signal_agent.scanner import (
     format_scan_message,
     parse_assets,
 )
+from crypto_signal_agent.storage.sqlite_store import SignalStore
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     monitor = subparsers.add_parser(
         "monitor-new",
-        help="Мониторить новые Bybit Spot монеты и отправлять сигналы.",
+        help="Мониторить новые Spot монеты и отправлять сигналы.",
     )
     monitor.add_argument("--send-alert", action="store_true", help="Отправлять новые сигналы в Telegram.")
     monitor.add_argument("--send-empty", action="store_true", help="Отправлять отчет даже если новых монет нет.")
@@ -72,9 +73,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Интервал проверки в секундах. Если не указать, берется MONITOR_INTERVAL_SECONDS из .env.",
     )
+    monitor.add_argument(
+        "--exchanges",
+        help="Биржи для мониторинга через запятую. Пример: bybit,binance. Если не указать, берется MONITOR_EXCHANGES из .env.",
+    )
 
     init_db = subparsers.add_parser("init-db", help="Создать базу SQLite.")
     init_db.set_defaults(command="init-db")
+
+    history = subparsers.add_parser("history", help="Показать последние сохраненные сигналы.")
+    history.add_argument("--limit", type=int, default=10, help="Сколько сигналов показать, максимум 100.")
+    history.add_argument("--asset", help="Фильтр по монете, например BTC.")
     return parser
 
 
@@ -85,7 +94,8 @@ def main(argv: list[str] | None = None) -> None:
     cli_args = list(sys.argv[1:] if argv is None else argv)
     if not cli_args:
         cli_args = DEFAULT_HOSTING_ARGS
-    args = build_parser().parse_args(cli_args)
+    parser = build_parser()
+    args = parser.parse_args(cli_args)
     settings = Settings.from_env()
 
     if args.command == "check-symbol":
@@ -132,19 +142,24 @@ def main(argv: list[str] | None = None) -> None:
         )
         payload = user_signal_dict(signal)
         if args.send_alert:
-            payload["telegram"] = "отправлено" if pipeline.last_alert_sent else "не отправлено"
+            payload["telegram"] = telegram_status_text(pipeline.last_alert_status)
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
     if args.command == "monitor-new":
         monitor = NewListingMonitor(settings)
         interval = args.interval or settings.monitor_interval_seconds
+        try:
+            monitor_exchanges = parse_monitor_exchanges(args.exchanges, settings.monitor_exchanges)
+        except ValueError as exc:
+            parser.error(str(exc))
 
         def run_cycle() -> None:
             payload = monitor.run_once(
                 send_alert=args.send_alert,
                 notify_existing=args.notify_existing,
                 send_empty=args.send_empty,
+                exchanges=monitor_exchanges,
             )
             print(json.dumps(payload, indent=2, ensure_ascii=False))
 
@@ -154,7 +169,8 @@ def main(argv: list[str] | None = None) -> None:
 
         started_text = (
             "Crypto Signal Agent запущен\n"
-            "Режим: мониторинг новых Bybit Spot монет\n"
+            "Режим: мониторинг новых Spot монет\n"
+            f"Биржи: {', '.join(monitor_exchanges)}\n"
             f"Интервал: {interval} секунд\n"
             "Если появится новая USDT-пара, бот отправит сигнал."
         )
@@ -185,6 +201,17 @@ def main(argv: list[str] | None = None) -> None:
         if args.send_alert:
             sent = TelegramAlerter.from_settings(settings).send_text(format_scan_message(payload))
             payload["telegram"] = "отправлено" if sent else "не отправлено"
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "history":
+        signals = SignalStore(settings.database_path).recent_signals(limit=args.limit, asset=args.asset)
+        payload = {
+            "база": str(settings.database_path),
+            "фильтр_монета": args.asset.upper() if args.asset else None,
+            "показано": len(signals),
+            "сигналы": signals,
+        }
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
 

@@ -105,7 +105,7 @@ python -m crypto_signal_agent.cli scan --assets BTC,SOL,LINK --offline-venues by
 
 ## Мониторинг новых монет
 
-Первый запуск сохраняет текущий список Bybit Spot как уже известный, чтобы бот не прислал сотни старых монет:
+Первый запуск сохраняет текущий список Spot-пар как уже известный, чтобы бот не прислал сотни старых монет:
 
 ```bash
 python -m crypto_signal_agent.cli monitor-new --send-alert --send-empty
@@ -133,9 +133,38 @@ bash run_monitor.sh
 
 ```text
 MONITOR_INTERVAL_SECONDS=300
+MONITOR_EXCHANGES=bybit
 ```
 
-При таком запуске бот сам проверяет весь Bybit Spot каждые 5 минут. Если появляется новая `USDT`-пара, он проверяет Binance, формирует сигнал и отправляет его в Telegram. Если новых монет нет, сообщение не отправляется.
+При таком запуске бот сам проверяет весь Bybit Spot каждые 5 минут. Если появляется новая `USDT`-пара, он проверяет обязательные биржи, формирует сигнал и отправляет его в Telegram. Если новых монет нет, сообщение не отправляется.
+
+Чтобы мониторить Bybit и Binance одновременно:
+
+```bash
+python -m crypto_signal_agent.cli monitor-new --loop --send-alert --exchanges bybit,binance
+```
+
+Или через `.env`:
+
+```text
+MONITOR_EXCHANGES=bybit,binance
+```
+
+Повтор одного и того же события в Telegram не отправляется повторно: бот хранит ключ уже отправленного алерта в SQLite.
+
+## История сигналов
+
+Показать последние сохраненные сигналы:
+
+```bash
+python -m crypto_signal_agent.cli history
+```
+
+Ограничить количество и отфильтровать по монете:
+
+```bash
+python -m crypto_signal_agent.cli history --asset BTC --limit 5
+```
 
 ## Деплой на Bothost через GitHub
 

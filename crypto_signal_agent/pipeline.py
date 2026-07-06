@@ -19,6 +19,7 @@ class SignalPipeline:
         self.alerter = TelegramAlerter.from_settings(settings)
         self.llm = LlmAnalyst(settings)
         self.last_alert_sent: bool | None = None
+        self.last_alert_status: str | None = None
 
     def analyze(
         self,
@@ -46,7 +47,29 @@ class SignalPipeline:
         final_signal = replace(draft, analysis=analysis)
         self.store.save(final_signal)
         if send_alert:
-            self.last_alert_sent = self.alerter.send_signal(final_signal)
+            self._send_alert_once(final_signal)
         else:
             self.last_alert_sent = None
+            self.last_alert_status = None
         return final_signal
+
+    def _send_alert_once(self, signal: Signal) -> None:
+        alert_key = self.store.alert_key(signal)
+        if self.store.alert_was_sent("telegram", alert_key):
+            self.last_alert_sent = False
+            self.last_alert_status = "duplicate_skipped"
+            return
+
+        if not self.alerter.enabled():
+            self.last_alert_sent = False
+            self.last_alert_status = "disabled"
+            return
+
+        sent = self.alerter.send_signal(signal)
+        self.last_alert_sent = sent
+        if not sent:
+            self.last_alert_status = "failed"
+            return
+
+        self.store.record_alert_sent("telegram", alert_key, signal)
+        self.last_alert_status = "sent"
