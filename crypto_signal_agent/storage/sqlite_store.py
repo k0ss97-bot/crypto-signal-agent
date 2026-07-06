@@ -3,13 +3,22 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 
 from crypto_signal_agent.models import Signal
 from crypto_signal_agent.models import utc_now_iso
 from crypto_signal_agent.presentation import user_signal_dict
+
+
+@contextmanager
+def connect_db(path: Path) -> Iterator[sqlite3.Connection]:
+    with closing(sqlite3.connect(path)) as db:
+        with db:
+            yield db
 
 
 @dataclass
@@ -18,7 +27,7 @@ class SignalStore:
 
     def init(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS signals (
@@ -84,7 +93,7 @@ class SignalStore:
     def save(self, signal: Signal) -> int:
         self.init()
         payload = json.dumps(user_signal_dict(signal), ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             cursor = db.execute(
                 """
                 INSERT INTO signals (
@@ -115,7 +124,7 @@ class SignalStore:
             params = (asset.upper(), safe_limit)
         else:
             params = (safe_limit,)
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             rows = db.execute(
                 f"""
                 SELECT id, payload_json
@@ -136,7 +145,7 @@ class SignalStore:
 
     def signal_count(self) -> int:
         self.init()
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             row = db.execute("SELECT COUNT(*) FROM signals").fetchone()
         return int(row[0] or 0)
 
@@ -154,7 +163,7 @@ class SignalStore:
 
     def alert_was_sent(self, channel: str, alert_key: str) -> bool:
         self.init()
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             row = db.execute(
                 """
                 SELECT 1
@@ -168,7 +177,7 @@ class SignalStore:
     def record_alert_sent(self, channel: str, alert_key: str, signal: Signal) -> bool:
         self.init()
         payload = json.dumps(user_signal_dict(signal), ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             cursor = db.execute(
                 """
                 INSERT OR IGNORE INTO sent_alerts (
@@ -190,19 +199,19 @@ class SignalStore:
     def sent_alert_count(self, channel: str | None = None) -> int:
         self.init()
         if channel:
-            with sqlite3.connect(self.path) as db:
+            with connect_db(self.path) as db:
                 row = db.execute(
                     "SELECT COUNT(*) FROM sent_alerts WHERE channel = ?",
                     (channel,),
                 ).fetchone()
         else:
-            with sqlite3.connect(self.path) as db:
+            with connect_db(self.path) as db:
                 row = db.execute("SELECT COUNT(*) FROM sent_alerts").fetchone()
         return int(row[0] or 0)
 
     def known_symbols(self, exchange: str) -> set[str]:
         self.init()
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             rows = db.execute(
                 "SELECT symbol FROM known_listings WHERE exchange = ?",
                 (exchange,),
@@ -211,7 +220,7 @@ class SignalStore:
 
     def known_count(self, exchange: str) -> int:
         self.init()
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             row = db.execute(
                 "SELECT COUNT(*) FROM known_listings WHERE exchange = ?",
                 (exchange,),
@@ -229,7 +238,7 @@ class SignalStore:
     ) -> None:
         self.init()
         now = utc_now_iso()
-        with sqlite3.connect(self.path) as db:
+        with connect_db(self.path) as db:
             db.execute(
                 """
                 INSERT INTO known_listings (

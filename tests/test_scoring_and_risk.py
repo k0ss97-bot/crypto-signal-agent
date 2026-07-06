@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from crypto_signal_agent.analysis.risk_engine import evaluate_risk
 from crypto_signal_agent.analysis.scoring import score_event
@@ -325,7 +326,8 @@ class ScoringAndRiskTests(unittest.TestCase):
             venues=make_venues(),
         )
 
-        payload = build_diagnostics_payload(settings, pipeline.store, ("bybit", "binance"))
+        with patch("crypto_signal_agent.diagnostics.openai_sdk_available", return_value=True):
+            payload = build_diagnostics_payload(settings, pipeline.store, ("bybit", "binance"))
         message = format_diagnostics_message(payload)
 
         self.assertIn("Данные для Codex", message)
@@ -333,6 +335,9 @@ class ScoringAndRiskTests(unittest.TestCase):
         self.assertIn("Сигналов в базе: 1", message)
         self.assertIn("Telegram настроен: да", message)
         self.assertIn("OpenAI настроен: да", message)
+        self.assertIn("OpenAI модель: gpt-5.5", message)
+        self.assertIn("OpenAI SDK установлен: да", message)
+        self.assertIn("OpenAI готов: да", message)
         self.assertNotIn("secret-token", message)
         self.assertNotIn("secret-openai", message)
 

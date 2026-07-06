@@ -9,7 +9,7 @@ import time
 from crypto_signal_agent.alerts.telegram import DIAGNOSTICS_CALLBACK_DATA, TelegramAlerter
 from crypto_signal_agent.collectors.venues import VenueChecker
 from crypto_signal_agent.config import Settings
-from crypto_signal_agent.diagnostics import build_diagnostics_payload, format_diagnostics_message
+from crypto_signal_agent.diagnostics import build_diagnostics_payload, format_diagnostics_message, openai_status
 from crypto_signal_agent.models import Event, MarketMetrics, Source
 from crypto_signal_agent.listing_monitor import NewListingMonitor, parse_monitor_exchanges, telegram_status_text
 from crypto_signal_agent.pipeline import SignalPipeline
@@ -86,6 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
     history = subparsers.add_parser("history", help="Показать последние сохраненные сигналы.")
     history.add_argument("--limit", type=int, default=10, help="Сколько сигналов показать, максимум 100.")
     history.add_argument("--asset", help="Фильтр по монете, например BTC.")
+
+    openai_check = subparsers.add_parser("openai-status", help="Проверить настройку OpenAI без API-запроса.")
+    openai_check.set_defaults(command="openai-status")
     return parser
 
 
@@ -316,6 +319,27 @@ def main(argv: list[str] | None = None) -> None:
         }
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
+
+    if args.command == "openai-status":
+        status = openai_status(settings)
+        payload = {
+            "openai_ключ": "есть" if status["configured"] else "нет",
+            "openai_model": status["model"],
+            "openai_sdk": "установлен" if status["sdk_available"] else "не установлен",
+            "готово": "да" if status["ready"] else "нет",
+            "что_добавить_на_хостинг": [] if status["ready"] else missing_openai_setup(status),
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+
+def missing_openai_setup(status: dict) -> list[str]:
+    missing = []
+    if not status["configured"]:
+        missing.append("OPENAI_API_KEY")
+    if not status["sdk_available"]:
+        missing.append("python package: openai>=1.0.0")
+    return missing
 
 
 if __name__ == "__main__":

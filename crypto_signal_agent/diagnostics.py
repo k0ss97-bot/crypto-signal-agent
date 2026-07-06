@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from importlib.util import find_spec
 from typing import Any
 
 from crypto_signal_agent import __version__
@@ -14,6 +15,21 @@ from crypto_signal_agent.storage.sqlite_store import SignalStore
 SUPPORTED_MONITOR_EXCHANGES = ("bybit", "binance")
 
 
+def openai_sdk_available() -> bool:
+    return find_spec("openai") is not None
+
+
+def openai_status(settings: Settings) -> dict[str, Any]:
+    configured = bool(settings.openai_api_key)
+    sdk_available = openai_sdk_available()
+    return {
+        "configured": configured,
+        "model": settings.openai_model,
+        "sdk_available": sdk_available,
+        "ready": configured and sdk_available,
+    }
+
+
 def build_diagnostics_payload(
     settings: Settings,
     store: SignalStore,
@@ -22,6 +38,7 @@ def build_diagnostics_payload(
     exchanges = monitor_exchanges or settings.monitor_exchanges
     count_exchanges = tuple(dict.fromkeys((*exchanges, *settings.required_exchanges, *SUPPORTED_MONITOR_EXCHANGES)))
     recent_signals = store.recent_signals(limit=3)
+    openai = openai_status(settings)
     return {
         "создано": utc_now_iso(),
         "версия": __version__,
@@ -40,7 +57,8 @@ def build_diagnostics_payload(
         "сигналов_в_базе": store.signal_count(),
         "telegram_алертов_отправлено": store.sent_alert_count("telegram"),
         "telegram_настроен": bool(settings.telegram_bot_token and settings.telegram_chat_id),
-        "openai_настроен": bool(settings.openai_api_key),
+        "openai_настроен": openai["configured"],
+        "openai": openai,
         "live_trading": settings.live_trading_enabled,
         "риск": {
             "max_spread_pct": settings.max_spread_pct,
@@ -77,6 +95,8 @@ def format_diagnostics_message(payload: dict[str, Any]) -> str:
     strict_text = "да" if payload["строгий_режим"] else "нет"
     telegram_text = "да" if payload["telegram_настроен"] else "нет"
     openai_text = "да" if payload["openai_настроен"] else "нет"
+    openai_sdk_text = "да" if payload["openai"]["sdk_available"] else "нет"
+    openai_ready_text = "да" if payload["openai"]["ready"] else "нет"
     live_text = "да" if payload["live_trading"] else "нет"
     return (
         "Данные для Codex\n"
@@ -94,6 +114,9 @@ def format_diagnostics_message(payload: dict[str, Any]) -> str:
         f"Telegram алертов отправлено: {payload['telegram_алертов_отправлено']}\n"
         f"Telegram настроен: {telegram_text}\n"
         f"OpenAI настроен: {openai_text}\n"
+        f"OpenAI модель: {payload['openai']['model']}\n"
+        f"OpenAI SDK установлен: {openai_sdk_text}\n"
+        f"OpenAI готов: {openai_ready_text}\n"
         f"Live trading: {live_text}\n"
         "Риск-фильтры: "
         f"spread<={payload['риск']['max_spread_pct']}%, "

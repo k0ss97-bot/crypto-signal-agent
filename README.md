@@ -165,6 +165,29 @@ MONITOR_EXCHANGES=bybit,binance
 
 Эти данные можно прислать в Codex, если нужно быстро понять, что происходит на хостинге.
 
+## Подключение OpenAI
+
+Для LLM-анализа добавьте на хостинге переменные:
+
+```text
+OPENAI_API_KEY=ваш_api_ключ
+OPENAI_MODEL=gpt-5.5
+```
+
+Docker-сборка уже устанавливает Python SDK `openai`. Проверить локально или в логах можно командой:
+
+```bash
+python -m crypto_signal_agent.cli openai-status
+```
+
+В Telegram-кнопке `Данные для Codex` после перезапуска должно быть:
+
+```text
+OpenAI настроен: да
+OpenAI SDK установлен: да
+OpenAI готов: да
+```
+
 ## История сигналов
 
 Показать последние сохраненные сигналы:
