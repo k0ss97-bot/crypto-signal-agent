@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 import time
 
 from crypto_signal_agent.alerts.telegram import DIAGNOSTICS_CALLBACK_DATA, TelegramAlerter
@@ -159,6 +160,31 @@ def unauthorized_chat_message(chat_id: str | int | None) -> str:
     )
 
 
+def start_telegram_polling_thread(
+    alerter: TelegramAlerter,
+    settings: Settings,
+    monitor_exchanges: tuple[str, ...],
+) -> threading.Thread:
+    def poll_forever() -> None:
+        update_offset: int | None = None
+        print("Telegram polling поток запущен.", flush=True)
+        while True:
+            try:
+                update_offset = process_telegram_callbacks(
+                    alerter,
+                    settings,
+                    monitor_exchanges,
+                    update_offset,
+                )
+            except Exception as exc:
+                print(f"Telegram polling ошибка: {exc}", flush=True)
+            time.sleep(3)
+
+    thread = threading.Thread(target=poll_forever, name="telegram-polling", daemon=True)
+    thread.start()
+    return thread
+
+
 def main(argv: list[str] | None = None) -> None:
     cli_args = list(sys.argv[1:] if argv is None else argv)
     if not cli_args:
@@ -218,7 +244,6 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "monitor-new":
         monitor = NewListingMonitor(settings)
         interval = args.interval or settings.monitor_interval_seconds
-        telegram_update_offset: int | None = None
         alerter = TelegramAlerter.from_settings(settings)
         try:
             monitor_exchanges = parse_monitor_exchanges(args.exchanges, settings.monitor_exchanges)
@@ -249,23 +274,15 @@ def main(argv: list[str] | None = None) -> None:
         if args.send_alert:
             if alerter.delete_webhook():
                 print("Telegram webhook очищен, включен polling для кнопок.", flush=True)
-            alerter.send_text(started_text)
+            start_telegram_polling_thread(alerter, settings, monitor_exchanges)
+            if alerter.send_text(started_text):
+                print("Telegram стартовое сообщение отправлено.", flush=True)
+            else:
+                print("Telegram стартовое сообщение не отправлено. Проверь TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.", flush=True)
         try:
             while True:
                 run_cycle()
-                sleep_until = time.monotonic() + interval
-                while True:
-                    if args.send_alert:
-                        telegram_update_offset = process_telegram_callbacks(
-                            alerter,
-                            settings,
-                            monitor_exchanges,
-                            telegram_update_offset,
-                        )
-                    remaining_seconds = sleep_until - time.monotonic()
-                    if remaining_seconds <= 0:
-                        break
-                    time.sleep(min(5, remaining_seconds))
+                time.sleep(interval)
         except KeyboardInterrupt:
             print("Мониторинг остановлен.")
             return
