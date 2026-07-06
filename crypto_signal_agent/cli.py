@@ -103,6 +103,28 @@ def process_telegram_callbacks(
         if isinstance(update_id, int):
             next_offset = max(next_offset or 0, update_id + 1)
 
+        message_update = update.get("message") or {}
+        if message_update:
+            chat = message_update.get("chat") or {}
+            chat_id = chat.get("id")
+            text = str(message_update.get("text") or "").strip().split(maxsplit=1)[0].lower()
+            if not alerter.is_authorized_chat(chat_id):
+                continue
+            if text == "/start":
+                alerter.send_text(
+                    "Crypto Signal Agent работает. Нажми кнопку, чтобы получить данные для Codex.",
+                    chat_id=chat_id,
+                )
+            elif text == "/diagnostics":
+                store = SignalStore(settings.database_path)
+                diagnostics = build_diagnostics_payload(settings, store, monitor_exchanges)
+                alerter.send_text(
+                    format_diagnostics_message(diagnostics),
+                    chat_id=chat_id,
+                    include_diagnostics_button=False,
+                )
+            continue
+
         callback = update.get("callback_query") or {}
         if callback.get("data") != DIAGNOSTICS_CALLBACK_DATA:
             continue

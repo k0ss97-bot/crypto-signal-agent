@@ -81,7 +81,7 @@ class TelegramAlerter:
             return ()
         params: dict[str, Any] = {
             "timeout": timeout_seconds,
-            "allowed_updates": json.dumps(["callback_query"]),
+            "allowed_updates": json.dumps(["callback_query", "message"]),
         }
         if offset is not None:
             params["offset"] = offset

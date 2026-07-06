@@ -348,6 +348,45 @@ class ScoringAndRiskTests(unittest.TestCase):
         self.assertIn("Данные для Codex", fake_alerter.sent[0])
         self.assertNotIn("secret-token", fake_alerter.sent[0])
 
+    def test_process_telegram_start_command_sends_button_message(self) -> None:
+        class FakeAlerter:
+            def __init__(self) -> None:
+                self.sent: list[tuple[str, bool]] = []
+
+            def fetch_updates(self, offset: int | None = None, timeout_seconds: int = 0) -> tuple[dict, ...]:
+                return (
+                    {
+                        "update_id": 7,
+                        "message": {
+                            "chat": {"id": 123},
+                            "text": "/start",
+                        },
+                    },
+                )
+
+            def is_authorized_chat(self, chat_id: str | int | None) -> bool:
+                return str(chat_id) == "123"
+
+            def send_text(
+                self,
+                text: str,
+                chat_id: str | int | None = None,
+                reply_markup: dict | None = None,
+                include_diagnostics_button: bool = True,
+            ) -> bool:
+                self.sent.append((text, include_diagnostics_button))
+                return True
+
+        settings = make_settings(telegram_bot_token="secret-token", telegram_chat_id="123")
+        fake_alerter = FakeAlerter()
+
+        next_offset = process_telegram_callbacks(fake_alerter, settings, ("bybit",), None)
+
+        self.assertEqual(next_offset, 8)
+        self.assertEqual(len(fake_alerter.sent), 1)
+        self.assertIn("Crypto Signal Agent работает", fake_alerter.sent[0][0])
+        self.assertTrue(fake_alerter.sent[0][1])
+
     def test_scan_blocks_missing_binance_in_strict_mode(self) -> None:
         settings = make_settings(require_all_exchanges=True)
         result = evaluate_asset_scan(settings, "ABC", make_venues(binance=False, bybit=True))
