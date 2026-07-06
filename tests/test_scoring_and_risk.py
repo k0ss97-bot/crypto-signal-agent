@@ -289,6 +289,28 @@ class ScoringAndRiskTests(unittest.TestCase):
         self.assertIn("/deleteWebhook", http.calls[0][0])
         self.assertEqual(http.calls[0][1], {"drop_pending_updates": False})
 
+    def test_telegram_can_send_to_explicit_chat_without_configured_chat_id(self) -> None:
+        class FakeHttp:
+            def __init__(self) -> None:
+                self.payload: dict | None = None
+
+            def post_json(self, url: str, payload: dict) -> dict:
+                self.payload = payload
+                return {"ok": True}
+
+        settings = make_settings(telegram_bot_token="secret-token", telegram_chat_id=None)
+        http = FakeHttp()
+        sent = TelegramAlerter(settings, http).send_text(
+            "hello",
+            chat_id=123,
+            include_diagnostics_button=False,
+        )
+
+        self.assertTrue(sent)
+        self.assertIsNotNone(http.payload)
+        assert http.payload is not None
+        self.assertEqual(http.payload["chat_id"], 123)
+
     def test_diagnostics_message_has_safe_support_data(self) -> None:
         settings = make_settings(
             openai_api_key="secret-openai",
@@ -404,6 +426,45 @@ class ScoringAndRiskTests(unittest.TestCase):
         self.assertEqual(len(fake_alerter.sent), 1)
         self.assertIn("Crypto Signal Agent работает", fake_alerter.sent[0][0])
         self.assertTrue(fake_alerter.sent[0][1])
+
+    def test_process_telegram_start_command_explains_wrong_chat_id(self) -> None:
+        class FakeAlerter:
+            def __init__(self) -> None:
+                self.sent: list[tuple[str, str | int | None]] = []
+
+            def fetch_updates(self, offset: int | None = None, timeout_seconds: int = 0) -> tuple[dict, ...]:
+                return (
+                    {
+                        "update_id": 8,
+                        "message": {
+                            "chat": {"id": 999},
+                            "text": "/start",
+                        },
+                    },
+                )
+
+            def is_authorized_chat(self, chat_id: str | int | None) -> bool:
+                return False
+
+            def send_text(
+                self,
+                text: str,
+                chat_id: str | int | None = None,
+                reply_markup: dict | None = None,
+                include_diagnostics_button: bool = True,
+            ) -> bool:
+                self.sent.append((text, chat_id))
+                return True
+
+        settings = make_settings(telegram_bot_token="secret-token", telegram_chat_id="123")
+        fake_alerter = FakeAlerter()
+
+        next_offset = process_telegram_callbacks(fake_alerter, settings, ("bybit",), None)
+
+        self.assertEqual(next_offset, 9)
+        self.assertEqual(len(fake_alerter.sent), 1)
+        self.assertEqual(fake_alerter.sent[0][1], 999)
+        self.assertIn("TELEGRAM_CHAT_ID=999", fake_alerter.sent[0][0])
 
     def test_scan_blocks_missing_binance_in_strict_mode(self) -> None:
         settings = make_settings(require_all_exchanges=True)

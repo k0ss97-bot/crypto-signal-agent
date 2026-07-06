@@ -56,9 +56,9 @@ class TelegramAlerter:
         reply_markup: dict[str, Any] | None = None,
         include_diagnostics_button: bool = True,
     ) -> bool:
-        if not self.enabled():
-            return False
         target_chat_id = chat_id or self.settings.telegram_chat_id
+        if not self.settings.telegram_bot_token or not target_chat_id:
+            return False
         payload: dict[str, Any] = {
             "chat_id": target_chat_id,
             "text": text,
@@ -87,7 +87,8 @@ class TelegramAlerter:
             params["offset"] = offset
         try:
             payload = self.http.get_json(self._api_url("getUpdates"), params=params)
-        except HttpClientError:
+        except HttpClientError as exc:
+            print(f"Telegram getUpdates ошибка: {exc}", flush=True)
             return ()
         if not isinstance(payload, dict) or not payload.get("ok"):
             return ()

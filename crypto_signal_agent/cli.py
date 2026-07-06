@@ -109,6 +109,8 @@ def process_telegram_callbacks(
             chat_id = chat.get("id")
             text = str(message_update.get("text") or "").strip().split(maxsplit=1)[0].lower()
             if not alerter.is_authorized_chat(chat_id):
+                if text in {"/start", "/diagnostics"}:
+                    alerter.send_text(unauthorized_chat_message(chat_id), chat_id=chat_id, include_diagnostics_button=False)
                 continue
             if text == "/start":
                 alerter.send_text(
@@ -148,6 +150,13 @@ def process_telegram_callbacks(
             include_diagnostics_button=False,
         )
     return next_offset
+
+
+def unauthorized_chat_message(chat_id: str | int | None) -> str:
+    return (
+        "Этот чат не совпадает с TELEGRAM_CHAT_ID на хостинге.\n"
+        f"Поставь в переменных окружения:\nTELEGRAM_CHAT_ID={chat_id}"
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
