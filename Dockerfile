@@ -11,7 +11,9 @@ COPY main.py Procfile requirements.txt ./
 COPY run_monitor.sh ./run_monitor.sh
 
 RUN pip install --upgrade pip \
-    && pip install -e ".[openai]" \
+    && pip install -r requirements.txt \
+    && pip install -e . \
+    && python -c "import openai; print('OpenAI SDK installed')" \
     && mkdir -p /app/data \
     && chmod +x /app/run_monitor.sh
 

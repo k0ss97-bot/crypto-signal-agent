@@ -37,13 +37,8 @@ cp .env.example .env
 Если хотите установить пакет в окружение, используйте:
 
 ```bash
+pip install -r requirements.txt
 pip install -e .
-```
-
-Для анализа через OpenAI дополнительно понадобится:
-
-```bash
-pip install -e ".[openai]"
 ```
 
 Заполните `.env`. Для MVP используйте только read-only ключи бирж, если они понадобятся. Live trading специально отключен.
@@ -174,7 +169,7 @@ OPENAI_API_KEY=ваш_api_ключ
 OPENAI_MODEL=gpt-5.5
 ```
 
-Docker-сборка уже устанавливает Python SDK `openai`. Проверить локально или в логах можно командой:
+Docker-сборка устанавливает Python SDK `openai` и проверяет `import openai` во время сборки. Проверить локально или в логах можно командой:
 
 ```bash
 python -m crypto_signal_agent.cli openai-status
@@ -187,6 +182,8 @@ OpenAI настроен: да
 OpenAI SDK установлен: да
 OpenAI готов: да
 ```
+
+Если `OpenAI настроен: да`, но `OpenAI SDK установлен: нет`, сделайте полный rebuild/redeploy контейнера из последнего коммита.
 
 ## История сигналов
 
