@@ -5,9 +5,10 @@ import json
 import sys
 import time
 
-from crypto_signal_agent.alerts.telegram import TelegramAlerter
+from crypto_signal_agent.alerts.telegram import DIAGNOSTICS_CALLBACK_DATA, TelegramAlerter
 from crypto_signal_agent.collectors.venues import VenueChecker
 from crypto_signal_agent.config import Settings
+from crypto_signal_agent.diagnostics import build_diagnostics_payload, format_diagnostics_message
 from crypto_signal_agent.models import Event, MarketMetrics, Source
 from crypto_signal_agent.listing_monitor import NewListingMonitor, parse_monitor_exchanges, telegram_status_text
 from crypto_signal_agent.pipeline import SignalPipeline
@@ -90,6 +91,43 @@ def build_parser() -> argparse.ArgumentParser:
 DEFAULT_HOSTING_ARGS = ["monitor-new", "--loop", "--send-alert"]
 
 
+def process_telegram_callbacks(
+    alerter: TelegramAlerter,
+    settings: Settings,
+    monitor_exchanges: tuple[str, ...],
+    update_offset: int | None,
+) -> int | None:
+    next_offset = update_offset
+    for update in alerter.fetch_updates(offset=update_offset, timeout_seconds=0):
+        update_id = update.get("update_id")
+        if isinstance(update_id, int):
+            next_offset = max(next_offset or 0, update_id + 1)
+
+        callback = update.get("callback_query") or {}
+        if callback.get("data") != DIAGNOSTICS_CALLBACK_DATA:
+            continue
+
+        callback_id = str(callback.get("id") or "")
+        message = callback.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        if not alerter.is_authorized_chat(chat_id):
+            if callback_id:
+                alerter.answer_callback_query(callback_id, "Этот чат не привязан к боту.")
+            continue
+
+        if callback_id:
+            alerter.answer_callback_query(callback_id, "Отправляю данные для Codex.")
+        store = SignalStore(settings.database_path)
+        diagnostics = build_diagnostics_payload(settings, store, monitor_exchanges)
+        alerter.send_text(
+            format_diagnostics_message(diagnostics),
+            chat_id=chat_id,
+            include_diagnostics_button=False,
+        )
+    return next_offset
+
+
 def main(argv: list[str] | None = None) -> None:
     cli_args = list(sys.argv[1:] if argv is None else argv)
     if not cli_args:
@@ -149,6 +187,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "monitor-new":
         monitor = NewListingMonitor(settings)
         interval = args.interval or settings.monitor_interval_seconds
+        telegram_update_offset: int | None = None
+        alerter = TelegramAlerter.from_settings(settings)
         try:
             monitor_exchanges = parse_monitor_exchanges(args.exchanges, settings.monitor_exchanges)
         except ValueError as exc:
@@ -176,11 +216,23 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(started_text, flush=True)
         if args.send_alert:
-            TelegramAlerter.from_settings(settings).send_text(started_text)
+            alerter.send_text(started_text)
         try:
             while True:
                 run_cycle()
-                time.sleep(interval)
+                sleep_until = time.monotonic() + interval
+                while True:
+                    if args.send_alert:
+                        telegram_update_offset = process_telegram_callbacks(
+                            alerter,
+                            settings,
+                            monitor_exchanges,
+                            telegram_update_offset,
+                        )
+                    remaining_seconds = sleep_until - time.monotonic()
+                    if remaining_seconds <= 0:
+                        break
+                    time.sleep(min(5, remaining_seconds))
         except KeyboardInterrupt:
             print("Мониторинг остановлен.")
             return

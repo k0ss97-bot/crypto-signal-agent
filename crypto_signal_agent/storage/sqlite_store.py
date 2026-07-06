@@ -134,6 +134,12 @@ class SignalStore:
             signals.append(payload)
         return signals
 
+    def signal_count(self) -> int:
+        self.init()
+        with sqlite3.connect(self.path) as db:
+            row = db.execute("SELECT COUNT(*) FROM signals").fetchone()
+        return int(row[0] or 0)
+
     def alert_key(self, signal: Signal) -> str:
         event = signal.event
         payload = {
@@ -180,6 +186,19 @@ class SignalStore:
                 ),
             )
             return cursor.rowcount > 0
+
+    def sent_alert_count(self, channel: str | None = None) -> int:
+        self.init()
+        if channel:
+            with sqlite3.connect(self.path) as db:
+                row = db.execute(
+                    "SELECT COUNT(*) FROM sent_alerts WHERE channel = ?",
+                    (channel,),
+                ).fetchone()
+        else:
+            with sqlite3.connect(self.path) as db:
+                row = db.execute("SELECT COUNT(*) FROM sent_alerts").fetchone()
+        return int(row[0] or 0)
 
     def known_symbols(self, exchange: str) -> set[str]:
         self.init()

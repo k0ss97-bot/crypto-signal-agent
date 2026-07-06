@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
+from typing import Any
 
 from crypto_signal_agent.config import Settings
 from crypto_signal_agent.http_client import HttpClientError, JsonHttpClient
@@ -15,6 +16,22 @@ from crypto_signal_agent.presentation import (
     signal_label,
     venue_label,
 )
+
+
+DIAGNOSTICS_CALLBACK_DATA = "codex_diagnostics_v1"
+
+
+def diagnostics_keyboard() -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "Данные для Codex",
+                    "callback_data": DIAGNOSTICS_CALLBACK_DATA,
+                }
+            ]
+        ]
+    }
 
 
 @dataclass
@@ -32,36 +49,82 @@ class TelegramAlerter:
     def send_signal(self, signal: Signal) -> bool:
         return self.send_text(format_signal_message(signal))
 
-    def send_text(self, text: str) -> bool:
+    def send_text(
+        self,
+        text: str,
+        chat_id: str | int | None = None,
+        reply_markup: dict[str, Any] | None = None,
+        include_diagnostics_button: bool = True,
+    ) -> bool:
         if not self.enabled():
             return False
-        url = f"https://api.telegram.org/bot{self.settings.telegram_bot_token}/sendMessage"
-        try:
-            self.http.post_json(
-                url,
-                {
-                    "chat_id": self.settings.telegram_chat_id,
-                    "text": text,
-                    "disable_web_page_preview": True,
-                },
-            )
-        except HttpClientError:
-            return self._send_signal_with_curl(url, text)
-        return True
+        target_chat_id = chat_id or self.settings.telegram_chat_id
+        payload: dict[str, Any] = {
+            "chat_id": target_chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        elif include_diagnostics_button:
+            payload["reply_markup"] = diagnostics_keyboard()
 
-    def _send_signal_with_curl(self, url: str, text: str) -> bool:
+        url = self._api_url("sendMessage")
+        try:
+            response = self.http.post_json(url, payload)
+        except HttpClientError:
+            return self._post_with_curl(url, payload)
+        return bool(response.get("ok", True)) if isinstance(response, dict) else True
+
+    def fetch_updates(self, offset: int | None = None, timeout_seconds: int = 0) -> tuple[dict[str, Any], ...]:
+        if not self.settings.telegram_bot_token:
+            return ()
+        params: dict[str, Any] = {
+            "timeout": timeout_seconds,
+            "allowed_updates": json.dumps(["callback_query"]),
+        }
+        if offset is not None:
+            params["offset"] = offset
+        try:
+            payload = self.http.get_json(self._api_url("getUpdates"), params=params)
+        except HttpClientError:
+            return ()
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            return ()
+        updates = payload.get("result") or []
+        return tuple(update for update in updates if isinstance(update, dict))
+
+    def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> bool:
+        if not self.settings.telegram_bot_token:
+            return False
+        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text
+        try:
+            response = self.http.post_json(self._api_url("answerCallbackQuery"), payload)
+        except HttpClientError:
+            return self._post_with_curl(self._api_url("answerCallbackQuery"), payload)
+        return bool(response.get("ok", True)) if isinstance(response, dict) else True
+
+    def is_authorized_chat(self, chat_id: str | int | None) -> bool:
+        if chat_id is None or not self.settings.telegram_chat_id:
+            return False
+        return str(chat_id) == str(self.settings.telegram_chat_id)
+
+    def _api_url(self, method: str) -> str:
+        return f"https://api.telegram.org/bot{self.settings.telegram_bot_token}/{method}"
+
+    def _post_with_curl(self, url: str, payload: dict[str, Any]) -> bool:
         command = [
             "curl",
             "-sS",
             "-X",
             "POST",
             url,
-            "-d",
-            f"chat_id={self.settings.telegram_chat_id}",
-            "--data-urlencode",
-            f"text={text}",
-            "-d",
-            "disable_web_page_preview=true",
+            "-H",
+            "Content-Type: application/json",
+            "--data",
+            json.dumps(payload, ensure_ascii=False),
         ]
         result = subprocess.run(command, text=True, capture_output=True)
         if result.returncode != 0:

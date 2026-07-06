@@ -7,8 +7,10 @@ from pathlib import Path
 
 from crypto_signal_agent.analysis.risk_engine import evaluate_risk
 from crypto_signal_agent.analysis.scoring import score_event
-from crypto_signal_agent.alerts.telegram import format_signal_message
+from crypto_signal_agent.alerts.telegram import DIAGNOSTICS_CALLBACK_DATA, TelegramAlerter, format_signal_message
+from crypto_signal_agent.cli import process_telegram_callbacks
 from crypto_signal_agent.config import Settings
+from crypto_signal_agent.diagnostics import build_diagnostics_payload, format_diagnostics_message
 from crypto_signal_agent.listing_monitor import (
     NewListingMonitor,
     is_active_quote_instrument,
@@ -249,6 +251,102 @@ class ScoringAndRiskTests(unittest.TestCase):
         self.assertIn("Биржи:", message)
         self.assertIn("монета", payload)
         self.assertEqual(payload["сигнал"], "наблюдать")
+
+    def test_telegram_message_includes_diagnostics_button(self) -> None:
+        class FakeHttp:
+            def __init__(self) -> None:
+                self.payload: dict | None = None
+
+            def post_json(self, url: str, payload: dict) -> dict:
+                self.payload = payload
+                return {"ok": True}
+
+        settings = make_settings(telegram_bot_token="secret-token", telegram_chat_id="123")
+        http = FakeHttp()
+        sent = TelegramAlerter(settings, http).send_text("hello")
+
+        self.assertTrue(sent)
+        self.assertIsNotNone(http.payload)
+        assert http.payload is not None
+        button = http.payload["reply_markup"]["inline_keyboard"][0][0]
+        self.assertEqual(button["callback_data"], DIAGNOSTICS_CALLBACK_DATA)
+
+    def test_diagnostics_message_has_safe_support_data(self) -> None:
+        settings = make_settings(
+            openai_api_key="secret-openai",
+            telegram_bot_token="secret-token",
+            telegram_chat_id="123",
+            monitor_exchanges=("bybit", "binance"),
+        )
+        pipeline = SignalPipeline(settings)
+        pipeline.analyze(
+            event=make_event(),
+            market=MarketMetrics(price_change_20m_pct=18, volume_ratio_vs_7d=6.2, spread_pct=0.1),
+            venues=make_venues(),
+        )
+
+        payload = build_diagnostics_payload(settings, pipeline.store, ("bybit", "binance"))
+        message = format_diagnostics_message(payload)
+
+        self.assertIn("Данные для Codex", message)
+        self.assertIn("Мониторинг: Bybit, Binance", message)
+        self.assertIn("Сигналов в базе: 1", message)
+        self.assertIn("Telegram настроен: да", message)
+        self.assertIn("OpenAI настроен: да", message)
+        self.assertNotIn("secret-token", message)
+        self.assertNotIn("secret-openai", message)
+
+    def test_process_telegram_diagnostics_callback_sends_response(self) -> None:
+        class FakeAlerter:
+            def __init__(self) -> None:
+                self.answers: list[str] = []
+                self.sent: list[str] = []
+
+            def fetch_updates(self, offset: int | None = None, timeout_seconds: int = 0) -> tuple[dict, ...]:
+                return (
+                    {
+                        "update_id": 42,
+                        "callback_query": {
+                            "id": "callback-1",
+                            "data": DIAGNOSTICS_CALLBACK_DATA,
+                            "message": {"chat": {"id": 123}},
+                        },
+                    },
+                )
+
+            def is_authorized_chat(self, chat_id: str | int | None) -> bool:
+                return str(chat_id) == "123"
+
+            def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> bool:
+                self.answers.append(text or "")
+                return True
+
+            def send_text(
+                self,
+                text: str,
+                chat_id: str | int | None = None,
+                reply_markup: dict | None = None,
+                include_diagnostics_button: bool = True,
+            ) -> bool:
+                self.sent.append(text)
+                return True
+
+        settings = make_settings(telegram_bot_token="secret-token", telegram_chat_id="123")
+        pipeline = SignalPipeline(settings)
+        pipeline.analyze(
+            event=make_event(),
+            market=MarketMetrics(price_change_20m_pct=18, volume_ratio_vs_7d=6.2, spread_pct=0.1),
+            venues=make_venues(),
+        )
+        fake_alerter = FakeAlerter()
+
+        next_offset = process_telegram_callbacks(fake_alerter, settings, ("bybit",), None)
+
+        self.assertEqual(next_offset, 43)
+        self.assertEqual(fake_alerter.answers, ["Отправляю данные для Codex."])
+        self.assertEqual(len(fake_alerter.sent), 1)
+        self.assertIn("Данные для Codex", fake_alerter.sent[0])
+        self.assertNotIn("secret-token", fake_alerter.sent[0])
 
     def test_scan_blocks_missing_binance_in_strict_mode(self) -> None:
         settings = make_settings(require_all_exchanges=True)
