@@ -10,7 +10,10 @@ COPY crypto_signal_agent ./crypto_signal_agent
 COPY main.py Procfile requirements.txt ./
 COPY run_monitor.sh ./run_monitor.sh
 
-RUN pip install --upgrade pip \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --upgrade pip \
     && pip install -r requirements.txt \
     && pip install -e . \
     && python -c "import openai; print('OpenAI SDK installed')" \

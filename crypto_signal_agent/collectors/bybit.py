@@ -57,7 +57,15 @@ class BybitClient:
         )
 
     def spot_market_metrics(self, symbol: str) -> dict[str, float | bool]:
-        payload = self.ticker(symbol)
+        try:
+            payload = self.ticker(symbol)
+        except HttpClientError:
+            return {
+                "price_change_20m_pct": 0.0,
+                "volume_ratio_vs_7d": 1.0,
+                "spread_pct": 0.0,
+                "liquidity_ok": False,
+            }
         result = payload.get("result") or {}
         tickers = result.get("list") or []
         if not tickers:

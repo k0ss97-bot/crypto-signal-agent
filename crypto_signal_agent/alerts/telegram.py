@@ -136,7 +136,10 @@ class TelegramAlerter:
             "--data",
             json.dumps(payload, ensure_ascii=False),
         ]
-        result = subprocess.run(command, text=True, capture_output=True)
+        try:
+            result = subprocess.run(command, text=True, capture_output=True)
+        except OSError:
+            return False
         if result.returncode != 0:
             return False
         try:

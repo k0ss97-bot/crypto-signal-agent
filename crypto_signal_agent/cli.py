@@ -71,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     monitor.add_argument("--loop", action="store_true", help="Запустить постоянный мониторинг.")
     monitor.add_argument(
+        "--send-startup-alert",
+        action="store_true",
+        help="Отправить в Telegram сообщение о запуске. По умолчанию отключено, чтобы рестарты хостинга не спамили чат.",
+    )
+    monitor.add_argument(
         "--interval",
         type=int,
         help="Интервал проверки в секундах. Если не указать, берется MONITOR_INTERVAL_SECONDS из .env.",
@@ -188,6 +193,16 @@ def start_telegram_polling_thread(
     return thread
 
 
+def monitor_error_payload(exc: Exception, monitor_exchanges: tuple[str, ...], interval: int) -> dict:
+    return {
+        "режим": "мониторинг новых Spot монет",
+        "статус": "ошибка цикла, мониторинг продолжит работу",
+        "биржи": list(monitor_exchanges),
+        "следующая_попытка_через_сек": interval,
+        "ошибка": str(exc),
+    }
+
+
 def main(argv: list[str] | None = None) -> None:
     cli_args = list(sys.argv[1:] if argv is None else argv)
     if not cli_args:
@@ -278,13 +293,25 @@ def main(argv: list[str] | None = None) -> None:
             if alerter.delete_webhook():
                 print("Telegram webhook очищен, включен polling для кнопок.", flush=True)
             start_telegram_polling_thread(alerter, settings, monitor_exchanges)
-            if alerter.send_text(started_text):
+            if args.send_startup_alert and alerter.send_text(started_text):
                 print("Telegram стартовое сообщение отправлено.", flush=True)
-            else:
+            elif args.send_startup_alert:
                 print("Telegram стартовое сообщение не отправлено. Проверь TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.", flush=True)
+            else:
+                print("Telegram стартовое сообщение пропущено, чтобы рестарты хостинга не спамили чат.", flush=True)
         try:
             while True:
-                run_cycle()
+                try:
+                    run_cycle()
+                except Exception as exc:
+                    print(
+                        json.dumps(
+                            monitor_error_payload(exc, monitor_exchanges, interval),
+                            indent=2,
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
                 time.sleep(interval)
         except KeyboardInterrupt:
             print("Мониторинг остановлен.")

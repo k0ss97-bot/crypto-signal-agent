@@ -83,7 +83,10 @@ class JsonHttpClient:
                 ]
             )
         command.append(url)
-        result = subprocess.run(command, text=True, capture_output=True)
+        try:
+            result = subprocess.run(command, text=True, capture_output=True)
+        except OSError as exc:
+            raise HttpClientError(f"curl недоступен для {safe_url(url)}: {exc}") from exc
         if result.returncode != 0:
             message = result.stderr.strip() or f"curl exit {result.returncode}"
             raise HttpClientError(f"сетевая ошибка для {safe_url(url)}: {safe_url(message)}")

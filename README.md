@@ -118,6 +118,12 @@ python -m crypto_signal_agent.cli monitor-new --send-alert
 python -m crypto_signal_agent.cli monitor-new --loop --send-alert
 ```
 
+Стартовое сообщение в Telegram по умолчанию не отправляется, чтобы рестарты хостинга не спамили чат. Если оно нужно, запустите так:
+
+```bash
+python -m crypto_signal_agent.cli monitor-new --loop --send-alert --send-startup-alert
+```
+
 Или коротко:
 
 ```bash

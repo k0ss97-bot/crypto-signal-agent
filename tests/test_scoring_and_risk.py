@@ -9,9 +9,11 @@ from unittest.mock import patch
 from crypto_signal_agent.analysis.risk_engine import evaluate_risk
 from crypto_signal_agent.analysis.scoring import score_event
 from crypto_signal_agent.alerts.telegram import DIAGNOSTICS_CALLBACK_DATA, TelegramAlerter, format_signal_message
-from crypto_signal_agent.cli import process_telegram_callbacks
+from crypto_signal_agent.cli import monitor_error_payload, process_telegram_callbacks
 from crypto_signal_agent.config import Settings
+from crypto_signal_agent.collectors.bybit import BybitClient
 from crypto_signal_agent.diagnostics import build_diagnostics_payload, format_diagnostics_message
+from crypto_signal_agent.http_client import HttpClientError, JsonHttpClient
 from crypto_signal_agent.listing_monitor import (
     NewListingMonitor,
     is_active_quote_instrument,
@@ -312,6 +314,15 @@ class ScoringAndRiskTests(unittest.TestCase):
         assert http.payload is not None
         self.assertEqual(http.payload["chat_id"], 123)
 
+    def test_telegram_curl_fallback_handles_missing_curl(self) -> None:
+        settings = make_settings(telegram_bot_token="secret-token", telegram_chat_id="123")
+        alerter = TelegramAlerter(settings, JsonHttpClient())
+
+        with patch("crypto_signal_agent.alerts.telegram.subprocess.run", side_effect=FileNotFoundError("curl")):
+            sent = alerter._post_with_curl("https://api.telegram.org/botsecret-token/sendMessage", {})
+
+        self.assertFalse(sent)
+
     def test_diagnostics_message_has_safe_support_data(self) -> None:
         settings = make_settings(
             openai_api_key="secret-openai",
@@ -550,6 +561,32 @@ class ScoringAndRiskTests(unittest.TestCase):
         self.assertEqual(parse_monitor_exchanges("bybit,binance,bybit", ("bybit",)), ("bybit", "binance"))
         with self.assertRaises(ValueError):
             parse_monitor_exchanges("coinbase", ("bybit",))
+
+    def test_monitor_error_payload_keeps_process_alive_message(self) -> None:
+        payload = monitor_error_payload(RuntimeError("binance 451"), ("bybit", "binance"), 300)
+
+        self.assertEqual(payload["статус"], "ошибка цикла, мониторинг продолжит работу")
+        self.assertEqual(payload["следующая_попытка_через_сек"], 300)
+        self.assertIn("binance 451", payload["ошибка"])
+
+    def test_http_curl_fallback_reports_missing_curl_as_client_error(self) -> None:
+        client = JsonHttpClient()
+
+        with patch("crypto_signal_agent.http_client.subprocess.run", side_effect=FileNotFoundError("curl")):
+            with self.assertRaises(HttpClientError):
+                client._curl_json("GET", "https://example.com/test")
+
+    def test_bybit_market_metrics_handles_network_error(self) -> None:
+        class FailingHttp:
+            def get_json(self, url: str, params: dict | None = None) -> dict:
+                raise HttpClientError("bybit timeout")
+
+        metrics = BybitClient("https://example.com", FailingHttp()).spot_market_metrics("ABCUSDT")
+
+        self.assertEqual(metrics["price_change_20m_pct"], 0.0)
+        self.assertEqual(metrics["volume_ratio_vs_7d"], 1.0)
+        self.assertEqual(metrics["spread_pct"], 0.0)
+        self.assertFalse(metrics["liquidity_ok"])
 
     def test_monitor_can_process_bybit_and_binance_new_listings(self) -> None:
         class FakeBybit:
